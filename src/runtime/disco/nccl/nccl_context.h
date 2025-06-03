@@ -21,10 +21,10 @@
 #define TVM_RUNTIME_DISCO_NCCL_NCCL_CONTEXT_H_
 
 #include <dlpack/dlpack.h>
-#include <tvm/runtime/c_runtime_api.h>
+#include <tvm/ffi/function.h>
+#include <tvm/runtime/base.h>
 #include <tvm/runtime/disco/builtin.h>
 #include <tvm/runtime/disco/session.h>
-#include <tvm/runtime/registry.h>
 
 #include "../../../support/process_id.h"
 #include "../utils.h"
@@ -149,9 +149,9 @@ struct CCLThreadLocalContext {
   }
 
   deviceStream_t GetDefaultStream() {
-    const auto* func = tvm::runtime::Registry::Get("runtime.get_" TVM_DISCO_DEVICE_NAME "_stream");
-    ICHECK(func != nullptr);
-    deviceStream_t stream = static_cast<deviceStream_t>((*func)().operator void*());
+    const auto func = tvm::ffi::Function::GetGlobal("runtime.get_" TVM_DISCO_DEVICE_NAME "_stream");
+    ICHECK(func.has_value());
+    deviceStream_t stream = static_cast<deviceStream_t>((*func)().cast<void*>());
     return stream == nullptr ? default_stream : stream;
   }
 

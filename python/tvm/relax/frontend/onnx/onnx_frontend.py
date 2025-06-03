@@ -60,13 +60,13 @@ def get_type(elem_type: Union[str, int]) -> str:
         return elem_type
 
     try:
-        from onnx.mapping import (  # pylint: disable=import-outside-toplevel
-            TENSOR_TYPE_TO_NP_TYPE,
+        from onnx.helper import (  # pylint: disable=import-outside-toplevel
+            tensor_dtype_to_np_dtype,
         )
     except ImportError as exception:
         raise ImportError("Unable to import onnx which is required {}".format(exception))
 
-    return str(TENSOR_TYPE_TO_NP_TYPE[elem_type])
+    return str(tensor_dtype_to_np_dtype(elem_type))
 
 
 def get_constant(
@@ -564,15 +564,14 @@ class BitwiseXor(BitwiseBase):
         return cls.base_impl(bb, inputs, attr, params)
 
 
-class BitwiseNot(BitwiseBase):
+class BitwiseNot(OnnxOpConverter):
     """Converts an onnx BitwiseNot node into an equivalent Relax expression."""
-
-    numpy_op = _np.bitwise_not
-    relax_op = relax.op.bitwise_not
 
     @classmethod
     def _impl_v18(cls, bb, inputs, attr, params):
-        return cls.base_impl(bb, inputs, attr, params)
+        if isinstance(inputs[0], relax.Constant):
+            return relax.const(_np.bitwise_not(inputs[0].data.numpy()), inputs[0].struct_info.dtype)
+        return relax.op.bitwise_not(inputs[0])
 
 
 class BitShift(BitwiseBase):
@@ -1917,18 +1916,20 @@ class Expand(OnnxOpConverter):
         # If possible, directly expand to constant shape.
         if isinstance(shape, relax.Constant):
             new_shape = shape.data.numpy().tolist()
-            # For some reason, onnx allows target shapes to be smaller than input shapes.
-            # We need to go correct it.
+            # ONNX Expand operator requires preserving target rank and broadcasting
+            # according to standard rules. Dimensions are right-aligned.
             data_shape = [dim.value for dim in data.struct_info.shape]
-            # Dimensions are right alignment.
-            data_shape = [1] * (len(new_shape) - len(data_shape)) + data_shape
-            # Fix small target shapes.
-            for i, s in enumerate(new_shape):
-                if i < len(data_shape) and s < data_shape[i]:
+
+            # Right-align the shapes
+            if len(new_shape) > len(data_shape):
+                data_shape = [1] * (len(new_shape) - len(data_shape)) + data_shape
+            else:
+                new_shape = [1] * (len(data_shape) - len(new_shape)) + new_shape
+            # Fix small target shapes - if target dim is smaller than input dim
+            # use the input dim (ONNX-specific behavior).
+            for i in range(len(new_shape)):
+                if new_shape[i] < data_shape[i]:
                     new_shape[i] = data_shape[i]
-            # If the new shape matches the input shape, no transformation is needed.
-            if new_shape == data_shape:
-                return data
             return relax.op.broadcast_to(data, relax.ShapeExpr(new_shape))
 
         # Otherwise handle dynamic shapes.
@@ -2486,6 +2487,10 @@ class LayerNormalization(OnnxOpConverter):
         bias = inputs[2]
         axis = attr.get("axis", -1)
         epsilon = attr.get("epsilon", 1e-05)
+
+        if bias is None:
+            seq_len = data.struct_info.shape[1].value
+            bias = relax.const([0.0] * seq_len, dtype="float32")
 
         output = relax.op.nn.layer_norm(data, scale, bias, axis, epsilon)
         # Onnx layernorm has 3 outputs but only the first is used.
@@ -3111,13 +3116,13 @@ def _get_convert_map():
         "BitwiseAnd": BitwiseAnd,
         "BitwiseOr": BitwiseOr,
         "BitwiseXor": BitwiseXor,
-        "BitwiseNot": BitwiseNot,
         "BitShift": BitShift,
         "And": And,
         "Or": Or,
         "Xor": Xor,
         "Not": Not,
         # Unary operators
+        "BitwiseNot": BitwiseNot,
         "Log": Log,
         "Exp": Exp,
         "Acos": Acos,

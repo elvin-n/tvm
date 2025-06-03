@@ -20,8 +20,8 @@
 #include <cuda_fp16.h>
 #include <float.h>
 #include <tvm/runtime/ndarray.h>
-#include <tvm/runtime/packed_func.h>
-#include <tvm/runtime/registry.h>
+#include <tvm/ffi/function.h>
+#include <tvm/ffi/function.h>
 
 #include "group_gemm_runner.cuh"
 
@@ -45,8 +45,8 @@ void tvm_cutlass_fp8_group_gemm(NDArray x, NDArray weight, NDArray indptr, NDArr
                                 NDArray alpha, NDArray out) {
   // Workspace is used for storing device-side group gemm arguments and cutlass internal workspace.
   // Recommened size is 4MB.
-  auto func = tvm::runtime::Registry::Get("runtime.get_cuda_stream");
-  ICHECK(func != nullptr);
+  static auto func = tvm::ffi::Function::GetGlobalRequired("runtime.get_cuda_stream");
+  cudaStream_t stream = static_cast<cudaStream_t>(func().cast<void*>());
   CHECK_EQ(x->ndim, 2);
   CHECK_EQ(weight->ndim, 3);
   CHECK_EQ(indptr->ndim, 1);
@@ -60,22 +60,21 @@ void tvm_cutlass_fp8_group_gemm(NDArray x, NDArray weight, NDArray indptr, NDArr
   int n = weight->shape[1];
   int k = x->shape[1];
   const float* beta = nullptr;
-  cudaStream_t stream = static_cast<cudaStream_t>((*func)().operator void*());
   cutlass_group_gemm(static_cast<ElementA*>(x->data), static_cast<ElementB*>(weight->data),
                      static_cast<int64_t*>(indptr->data), static_cast<uint8_t*>(workspace->data),
                      workspace->shape[0], n, k, num_groups, static_cast<float*>(alpha->data), beta,
                      static_cast<ElementC*>(out->data), stream);
 }
 
-TVM_REGISTER_GLOBAL("cutlass.group_gemm_e5m2_e5m2_fp16")
+TVM_FFI_REGISTER_GLOBAL("cutlass.group_gemm_e5m2_e5m2_fp16")
     .set_body_typed(
         tvm_cutlass_fp8_group_gemm<cutlass::float_e5m2_t, cutlass::float_e5m2_t, cutlass::half_t>);
 
-TVM_REGISTER_GLOBAL("cutlass.group_gemm_e5m2_e4m3_fp16")
+TVM_FFI_REGISTER_GLOBAL("cutlass.group_gemm_e5m2_e4m3_fp16")
     .set_body_typed(
         tvm_cutlass_fp8_group_gemm<cutlass::float_e5m2_t, cutlass::float_e4m3_t, cutlass::half_t>);
 
-TVM_REGISTER_GLOBAL("cutlass.group_gemm_e4m3_e4m3_fp16")
+TVM_FFI_REGISTER_GLOBAL("cutlass.group_gemm_e4m3_e4m3_fp16")
     .set_body_typed(
         tvm_cutlass_fp8_group_gemm<cutlass::float_e4m3_t, cutlass::float_e4m3_t, cutlass::half_t>);
 

@@ -66,7 +66,7 @@ bool KnowAllShapeValues(const StructInfo& sinfo) {
 
 class LegalizeMutator : public ExprMutator {
  public:
-  explicit LegalizeMutator(const IRModule& mod, const Optional<Map<String, PackedFunc>>& cmap,
+  explicit LegalizeMutator(const IRModule& mod, const Optional<Map<String, ffi::Function>>& cmap,
                            const Optional<Array<String>> skip_ops, bool enable_warning)
       : ExprMutator(mod), mod_(std::move(mod)), enable_warning_(enable_warning) {
     if (cmap) {
@@ -161,7 +161,7 @@ class LegalizeMutator : public ExprMutator {
         return GetTarget(tup_sinfo->fields);
       }
     }
-    return NullOpt;
+    return std::nullopt;
   }
 
   Expr UpdateVDeviceOutStructInfo(Expr expr, const Call& visited_call,
@@ -246,7 +246,7 @@ class LegalizeMutator : public ExprMutator {
     }
 
     auto gvar = call->args[0].as<GlobalVar>();
-    if (!gvar.defined()) {
+    if (!gvar.has_value()) {
       // This is not a call into a legalized function within the
       // current IRModule, so no post-processing is required.
       return expr;
@@ -455,7 +455,7 @@ class LegalizeMutator : public ExprMutator {
   /*! \brief The context IRModule. */
   IRModule mod_;
   /*! \brief The customized legalization function map. */
-  Map<String, PackedFunc> cmap_;
+  Map<String, ffi::Function> cmap_;
   /*! \brief If VDevice annotations produced at least one PrimFunc with a Target attr*/
   bool generated_tir_with_target_attr_{false};
   /*!
@@ -471,10 +471,9 @@ class LegalizeMutator : public ExprMutator {
 
 namespace transform {
 
-Pass LegalizeOps(Optional<Map<String, PackedFunc>> cmap, Optional<Array<String>> skip_ops,
+Pass LegalizeOps(Optional<Map<String, ffi::Function>> cmap, Optional<Array<String>> skip_ops,
                  bool enable_warning) {
-  runtime::TypedPackedFunc<IRModule(IRModule, PassContext)> pass_func = [=](IRModule mod,
-                                                                            PassContext pc) {
+  auto pass_func = [=](IRModule mod, PassContext pc) {
     bool apply_legalize_ops =
         pc->GetConfig<Bool>("relax.transform.apply_legalize_ops").value_or(Bool(true))->value;
     if (apply_legalize_ops) {
@@ -488,7 +487,7 @@ Pass LegalizeOps(Optional<Map<String, PackedFunc>> cmap, Optional<Array<String>>
                           /*required=*/{});
 }
 
-TVM_REGISTER_GLOBAL("relax.transform.LegalizeOps").set_body_typed(LegalizeOps);
+TVM_FFI_REGISTER_GLOBAL("relax.transform.LegalizeOps").set_body_typed(LegalizeOps);
 
 }  // namespace transform
 

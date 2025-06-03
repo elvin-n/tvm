@@ -23,9 +23,9 @@
 #ifndef TVM_RUNTIME_RELAX_VM_EXECUTABLE_H_
 #define TVM_RUNTIME_RELAX_VM_EXECUTABLE_H_
 
+#include <tvm/ffi/function.h>
+#include <tvm/runtime/module.h>
 #include <tvm/runtime/object.h>
-#include <tvm/runtime/packed_func.h>
-#include <tvm/runtime/registry.h>
 
 #include <string>
 #include <unordered_map>
@@ -154,7 +154,7 @@ class VMExecutable : public runtime::ModuleNode {
   /*! \brief A map from globals (as strings) to their index in the function map. */
   std::unordered_map<std::string, Index> func_map;
   /*! \brief The global constant pool. */
-  std::vector<TVMRetValue> constants;
+  std::vector<ffi::Any> constants;
   /*! \brief The offset of instruction. */
   std::vector<Index> instr_offset;
   /*! \brief The byte data of instruction. */

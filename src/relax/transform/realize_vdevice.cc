@@ -74,10 +74,11 @@ class VDeviceLookup {
     LOG(FATAL) << "ValueError: "
                << "Expected to find device with type " << device_id << " and id " << device_id
                << ", but no such device was found in the IRModule's \"vdevice\" annotation";
+    TVM_FFI_UNREACHABLE();
   }
 
  private:
-  Optional<Array<VDevice>> opt_vdevices_ = NullOpt;
+  Optional<Array<VDevice>> opt_vdevices_ = std::nullopt;
 };
 
 class DeviceHintCollector : ExprVisitor {
@@ -184,7 +185,7 @@ class DeviceHintCollector : ExprVisitor {
         return bound.value();
       }
     }
-    return NullOpt;
+    return std::nullopt;
   }
 
   // A lookup to identify the VDevice from the IRModule attributes,
@@ -255,7 +256,7 @@ class VDeviceSetCollector : ExprVisitor {
     }
   }
 
-  Optional<Var> current_binding_ = NullOpt;
+  Optional<Var> current_binding_ = std::nullopt;
 
   // Lookup from relax variable to the set of relax variables which
   // must be located on the same device.  For example, a trivial
@@ -406,8 +407,7 @@ class VDeviceStructInfoUpdater : ExprMutator {
 namespace transform {
 
 Pass RealizeVDevice() {
-  runtime::TypedPackedFunc<IRModule(IRModule, PassContext)> pass_func = [=](IRModule mod,
-                                                                            PassContext pc) {
+  auto pass_func = [=](IRModule mod, PassContext pc) {
     auto known_vdevices = InferVDevice(mod);
     return VDeviceStructInfoUpdater::Apply(mod, known_vdevices);
   };
@@ -417,7 +417,7 @@ Pass RealizeVDevice() {
                           /*required=*/{});
 }
 
-TVM_REGISTER_GLOBAL("relax.transform.RealizeVDevice").set_body_typed(RealizeVDevice);
+TVM_FFI_REGISTER_GLOBAL("relax.transform.RealizeVDevice").set_body_typed(RealizeVDevice);
 
 }  // namespace transform
 }  // namespace relax

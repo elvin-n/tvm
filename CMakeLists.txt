@@ -159,7 +159,6 @@ if(MSVC)
   add_definitions(-D_SCL_SECURE_NO_WARNINGS)
   add_definitions(-D_ENABLE_EXTENDED_ALIGNED_STORAGE)
   add_definitions(-DNOMINMAX)
-
   # regeneration does not work well with msbuild custom rules.
   set(CMAKE_SUPPRESS_REGENERATION ON)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /EHsc")
@@ -371,16 +370,6 @@ if(USE_RPC)
   list(APPEND RUNTIME_SRCS ${RUNTIME_RPC_SRCS})
 endif(USE_RPC)
 
-tvm_file_glob(GLOB STACKVM_RUNTIME_SRCS src/runtime/stackvm/*.cc)
-tvm_file_glob(GLOB STACKVM_CODEGEN_SRCS src/target/stackvm/*.cc)
-list(APPEND COMPILER_SRCS ${STACKVM_CODEGEN_SRCS})
-if(USE_STACKVM_RUNTIME)
-  message(STATUS "Build with stackvm support in runtime...")
-  list(APPEND RUNTIME_SRCS ${STACKVM_RUNTIME_SRCS})
-else()
-  list(APPEND COMPILER_SRCS ${STACKVM_RUNTIME_SRCS})
-endif(USE_STACKVM_RUNTIME)
-
 if(USE_CUDA AND USE_NCCL)
   message(STATUS "Build with NCCL...")
   find_nccl(${USE_NCCL})
@@ -507,6 +496,9 @@ list(REMOVE_ITEM COMPILER_SRCS ${LIBINFO_FILE})
 add_library(tvm_objs OBJECT ${COMPILER_SRCS})
 add_library(tvm_runtime_objs OBJECT ${RUNTIME_SRCS})
 add_library(tvm_libinfo_objs OBJECT ${LIBINFO_FILE})
+target_link_libraries(tvm_objs PUBLIC tvm_ffi_header)
+target_link_libraries(tvm_runtime_objs PUBLIC tvm_ffi_header)
+target_link_libraries(tvm_libinfo_objs PUBLIC tvm_ffi_header)
 
 include(GNUInstallDirs)
 if(NOT BUILD_DUMMY_LIBTVM)
@@ -578,6 +570,9 @@ if(USE_IOS_RPC)
   add_subdirectory("apps/ios_rpc")
 endif()
 
+add_subdirectory(ffi)
+
+
 if(TVM_DEBUG_WITH_ABI_CHANGE)
   message(STATUS "Building with debug code that may cause ABI changes...")
   target_compile_definitions(tvm_objs PRIVATE "TVM_DEBUG_WITH_ABI_CHANGE")
@@ -612,6 +607,10 @@ endif()
 
 target_link_libraries(tvm PRIVATE ${TVM_RUNTIME_LINKER_LIBS})
 target_link_libraries(tvm_runtime PRIVATE ${TVM_RUNTIME_LINKER_LIBS})
+
+target_link_libraries(tvm PUBLIC tvm_ffi_objs)
+target_link_libraries(tvm_runtime PUBLIC tvm_ffi_objs)
+
 
 if(BUILD_FOR_HEXAGON AND DEFINED USE_HEXAGON_GTEST AND EXISTS ${USE_HEXAGON_GTEST})
   include(FetchContent)
@@ -650,6 +649,7 @@ if (HIDE_PRIVATE_SYMBOLS AND NOT ${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
   target_link_libraries(tvm_runtime PRIVATE ${HIDE_SYMBOLS_LINKER_FLAGS})
   target_compile_definitions(tvm_allvisible PUBLIC $<TARGET_PROPERTY:tvm,INTERFACE_COMPILE_DEFINITONS>)
   target_compile_definitions(tvm_allvisible PRIVATE $<TARGET_PROPERTY:tvm,COMPILE_DEFINITONS>)
+  target_link_libraries(tvm_allvisible PUBLIC tvm_ffi_objs)
 endif()
 
 # Create the `cpptest` target if we can find GTest.  If not, we create dummy
@@ -707,10 +707,10 @@ if(NOT DEFINED ENV{CONDA_BUILD})
 endif()
 
 # Installation rules
-install(TARGETS tvm EXPORT ${PROJECT_NAME}Targets DESTINATION lib${LIB_SUFFIX})
-install(TARGETS tvm_runtime EXPORT ${PROJECT_NAME}Targets DESTINATION lib${LIB_SUFFIX})
+install(TARGETS tvm DESTINATION lib${LIB_SUFFIX})
+install(TARGETS tvm_runtime DESTINATION lib${LIB_SUFFIX})
 if(BUILD_FOR_HEXAGON AND DEFINED USE_HEXAGON_GTEST AND EXISTS ${USE_HEXAGON_GTEST})
-  install(TARGETS gtest EXPORT ${PROJECT_NAME}Targets DESTINATION lib${LIB_SUFFIX})
+  install(TARGETS gtest DESTINATION lib${LIB_SUFFIX})
 endif()
 
 if (INSTALL_DEV)
@@ -745,9 +745,9 @@ string(APPEND PROJECT_CONFIG_CONTENT
        "include(\"\${CMAKE_CURRENT_LIST_DIR}/${PROJECT_NAME}Targets.cmake\")")
 file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/temp_config_file.cmake" ${PROJECT_CONFIG_CONTENT})
 
-install(EXPORT ${PROJECT_NAME}Targets
-  NAMESPACE ${PROJECT_NAME}::
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME})
+# install(EXPORT ${PROJECT_NAME}Targets
+#   NAMESPACE ${PROJECT_NAME}::
+#   DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME})
 
 # Create config for find_package()
 configure_package_config_file(
@@ -761,9 +761,9 @@ install(
 
 # More target definitions
 if(MSVC)
-  target_compile_definitions(tvm_objs PRIVATE -DTVM_EXPORTS)
-  target_compile_definitions(tvm_libinfo_objs PRIVATE -DTVM_EXPORTS)
-  target_compile_definitions(tvm_runtime_objs PRIVATE -DTVM_EXPORTS)
+  target_compile_definitions(tvm_objs PRIVATE -DTVM_EXPORTS -DTVM_FFI_EXPORTS)
+  target_compile_definitions(tvm_libinfo_objs PRIVATE -DTVM_EXPORTS -DTVM_FFI_EXPORTS)
+  target_compile_definitions(tvm_runtime_objs PRIVATE -DTVM_EXPORTS -DTVM_FFI_EXPORTS)
 endif()
 
 set(TVM_IS_DEBUG_BUILD OFF)
@@ -785,17 +785,8 @@ if(TVM_IS_DEBUG_BUILD)
   endif()
 endif()
 
-# Run dsymutil to generate debugging symbols for backtraces
-if(APPLE AND TVM_IS_DEBUG_BUILD)
-  find_program(DSYMUTIL dsymutil)
-  mark_as_advanced(DSYMUTIL)
-  add_custom_command(TARGET tvm
-      POST_BUILD
-      COMMAND ${DSYMUTIL} ARGS $<TARGET_FILE:tvm>
-      COMMENT "Running dsymutil"
-      VERBATIM
-		  )
-endif()
+add_dsymutil(tvm)
+add_dsymutil(tvm_runtime)
 
 if(BUILD_FOR_HEXAGON)
   # Wrap pthread_create to allow setting custom stack size.

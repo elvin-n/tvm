@@ -225,7 +225,7 @@ class CodeGenVM : public ExprFunctor<Instruction::Arg(const Expr&)> {
         LOG(FATAL) << "Should only use constant shape after shape lowering: " << op->values;
       }
     }
-    return builder_->ConvertConstant(ShapeTuple(shape));
+    return builder_->ConvertConstant(ffi::Shape(shape));
   }
 
   Instruction::Arg VisitExpr_(const PrimValueNode* op) final {
@@ -425,7 +425,7 @@ IRModule VMCodeGen(ExecBuilder exec_builder, IRModule mod) {
   return CodeGenVM::Run(exec_builder, mod);
 }
 
-TVM_REGISTER_GLOBAL("relax.VMCodeGen").set_body_typed(VMCodeGen);
+TVM_FFI_REGISTER_GLOBAL("relax.VMCodeGen").set_body_typed(VMCodeGen);
 
 /*!
  * \brief Link the modules together, possibly create a constant module.
@@ -446,8 +446,8 @@ void LinkModules(ObjectPtr<VMExecutable> exec, const Map<String, runtime::NDArra
     auto pf_var = mod.GetFunction("get_const_vars");
     std::vector<std::string> symbol_const_vars;
     if (pf_sym != nullptr && pf_var != nullptr) {
-      String symbol = pf_sym();
-      Array<String> variables = pf_var();
+      String symbol = pf_sym().cast<String>();
+      Array<String> variables = pf_var().cast<Array<String>>();
       for (size_t i = 0; i < variables.size(); i++) {
         symbol_const_vars.push_back(variables[i].operator std::string());
       }
@@ -490,7 +490,7 @@ Module VMLink(ExecBuilder builder, Target target, Optional<Module> lib, Array<Mo
   return Module(executable);
 }
 
-TVM_REGISTER_GLOBAL("relax.VMLink").set_body_typed(VMLink);
+TVM_FFI_REGISTER_GLOBAL("relax.VMLink").set_body_typed(VMLink);
 
 }  // namespace relax_vm
 }  // namespace relax
